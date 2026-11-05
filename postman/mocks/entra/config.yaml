@@ -1,0 +1,11 @@
+version: 1
+name: entra
+slug: entra
+protocol: http
+port: 4117
+origin: login.microsoftonline.com
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

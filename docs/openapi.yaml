@@ -1,0 +1,76 @@
+openapi: 3.0.3
+info:
+  title: Application BFF
+  version: 1.0.0
+paths:
+  /api/ui/hello:
+    get:
+      operationId: uiHello
+      summary: Hello for the signed-in UI
+      description: Requires a UI session and X-UI-Request header. Rejects page navigation and cross-origin browser requests. Bearer tokens do not authenticate this route.
+      parameters:
+        - in: header
+          name: X-UI-Request
+          required: true
+          schema:
+            type: string
+            enum: ['1']
+      security:
+        - session: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Hello'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Page navigation, cross-origin request, or required UI header missing.
+  /api/integration/v1/hello:
+    get:
+      operationId: integrationHello
+      summary: Hello for OAuth application integrations
+      description: Requires an Entra v2 RS256 access token for the configured API audience, tenant, idtyp=app, and an allowed azp client ID. Delegated and ID tokens are rejected. Session cookies are ignored. No fine-grained scopes or roles required.
+      security:
+        - oauth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Hello'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Calling application client ID is not allowed.
+        '503':
+          description: OAuth validation is not configured or signing keys are unavailable.
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: einvoice_demo_session
+    oauth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://login.microsoftonline.com/YOUR_TENANT_ID/oauth2/v2.0/token
+          scopes: {}
+  responses:
+    Hello:
+      description: Successful greeting. All responses use Cache-Control no-store.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [message]
+            properties:
+              message:
+                type: string
+                example: Hello
+    Unauthorized:
+      description: Authentication missing or invalid. External responses include a Bearer WWW-Authenticate challenge.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string

@@ -1,0 +1,8 @@
+simulation: entra-auth
+routing: path
+mocks:
+  - name: entra
+    routeKey: entra
+    origin:
+      - login.microsoftonline.com
+    path: postman/mocks/entra/config.yaml

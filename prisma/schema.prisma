@@ -1,0 +1,325 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum InvoiceStatus {
+  APPROVED
+  MANUAL_REVIEW
+  REVIEW_COMPLETED
+  SAP_POSTING_ERROR
+}
+
+enum LineStatus {
+  APPROVED
+  MANUAL_REVIEW
+  APPROVED_MANUAL
+  REJECTED_MANUAL
+}
+
+enum PostingTriggerMode {
+  AUTOMATIC
+  MANUAL
+}
+
+enum PostingStatus {
+  PENDING
+  GENERATED
+  ERROR
+  NOT_REQUIRED
+}
+enum ImportStatus {
+  ACCEPTED
+  PROCESSING
+  IMPORTED
+  FAILED
+  REJECTED
+}
+
+enum OutputType {
+  SAP
+  DATALAKE
+}
+
+enum OutputStatus {
+  PENDING
+  GENERATED
+  ERROR
+  NOT_REQUIRED
+}
+
+enum AuditAction {
+  AUTHENTICATION
+  IMPORT
+  STATE_TRANSITION
+  REVIEW_DECISION
+  DELETE_INVOICE
+  OUTPUT
+}
+
+model LocalUser {
+  id                   String       @id @default(cuid())
+  email                String       @unique
+  displayName          String       @map("display_name")
+  passwordHash         String       @map("password_hash")
+  passwordHashMetadata Json         @map("password_hash_metadata")
+  active               Boolean      @default(true)
+  auditEvents          AuditEvent[]
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+  @@map("local_user")
+}
+
+model Vendor {
+  id                String    @id @default(cuid())
+  vendorNumber      String    @unique @map("vendor_number")
+  invoiceIssuer     String?   @map("invoice_issuer")
+  name              String?
+  defaultWeightUnit String    @default("KG") @map("default_weight_unit")
+  active            Boolean   @default(true)
+  invoices          Invoice[]
+  validationConfigs VendorValidationConfiguration[]
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  @@map("vendor")
+}
+
+model Invoice {
+  id                  String        @id @default(cuid())
+  vendorId            String        @map("vendor_id")
+  vendor              Vendor        @relation(fields: [vendorId], references: [id])
+  prebillNumber       String        @map("prebill_number")
+  invoicePayer        String?       @map("invoice_payer")
+  invoiceIssuer       String?       @map("invoice_issuer")
+  invoicePeriod       String?       @map("invoice_period")
+  poNumber            String?       @map("po_number")
+  sourceCreationDate  DateTime?     @map("source_creation_date")
+  invoiceAddress      String?       @map("invoice_address")
+  sourceInvoiceStatus String?       @map("source_invoice_status")
+  sourceFileName      String        @map("source_file_name")
+  processingStatus    InvoiceStatus @default(MANUAL_REVIEW) @map("processing_status")
+  correlationId       String?       @map("correlation_id")
+  derivedDomain       String?       @map("derived_domain")
+  derivedInvoicePayer String?       @map("derived_invoice_payer")
+  derivedCarrier      String?       @map("derived_carrier")
+  deletedAt           DateTime?     @map("deleted_at")
+  deletedBy           String?       @map("deleted_by")
+  deletionReason      String?       @map("deletion_reason")
+  lines               InvoiceLine[]
+  postings            SapPosting[]
+  outputs             OutputRecord[]
+  importAttempts      ImportAttempt[]
+  auditEvents         AuditEvent[]
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  @@unique([vendorId, prebillNumber])
+  @@map("invoice")
+}
+
+model InvoiceLine {
+  id                 String      @id @default(cuid())
+  invoiceId          String      @map("invoice_id")
+  invoice            Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  lineNumber         Int         @map("line_number")
+  referenceNumber    String      @map("reference_number")
+  hawb               String?
+  invoicedWeight     Decimal?    @db.Decimal(14, 4) @map("invoiced_weight")
+  weightUnit         String?     @map("weight_unit")
+  transportMode      String?     @map("transport_mode")
+  chargeDescription  String?     @map("charge_description")
+  toBeInvoicedAmount Decimal?    @db.Decimal(14, 2) @map("to_be_invoiced_amount")
+  invoiceCurrency    String?     @map("invoice_currency")
+  sourceRow          Json        @map("source_row")
+  matchedShipmentId  String?     @map("matched_shipment_id")
+  tmidLookupStatus   String?     @map("tmid_lookup_status")
+  tmidLookupHttpStatus Int?      @map("tmid_lookup_http_status")
+  tmidLookupResponseMs Int?      @map("tmid_lookup_response_ms")
+  tmidLookupCategory String?     @map("tmid_lookup_category")
+  tmidLookupMessage  String?     @map("tmid_lookup_message")
+  tmidResponseJson   Json?       @map("tmid_response_json")
+  tmidResponseSchemaVersion String? @map("tmid_response_schema_version")
+  resolvedDomain     String?     @map("resolved_domain")
+  resolvedInvoicePayer String?   @map("resolved_invoice_payer")
+  resolvedCarrier    String?     @map("resolved_carrier")
+  prebillNumberFormat String?    @map("prebill_number_format")
+  cachedFreightPayer String?     @map("cached_freight_payer")
+  lineStatus         LineStatus  @default(MANUAL_REVIEW) @map("line_status")
+  ruleEvaluations    RuleEvaluation[]
+  manualDecision     ManualReviewDecision?
+  outputs            OutputRecord[]
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+  @@unique([invoiceId, lineNumber])
+  @@map("invoice_line")
+}
+
+model RuleEvaluation {
+  id                   String      @id @default(cuid())
+  invoiceLineId        String      @map("invoice_line_id")
+  invoiceLine          InvoiceLine @relation(fields: [invoiceLineId], references: [id], onDelete: Cascade)
+  ruleCode             String      @map("rule_code")
+  ruleVersion          String      @default("v1") @map("rule_version")
+  passed               Boolean
+  exceptionMessage     String?     @map("exception_message")
+  expectedValue        String?     @map("expected_value")
+  actualValue          String?     @map("actual_value")
+  configurationVersion String?     @map("configuration_version")
+  configurationSnapshot Json?      @map("configuration_snapshot")
+  comparedFields       Json?       @map("compared_fields")
+  evaluatedAt          DateTime    @default(now()) @map("evaluated_at")
+  @@map("rule_evaluation")
+}
+
+model ManualReviewDecision {
+  id            String      @id @default(cuid())
+  invoiceLineId String      @unique @map("invoice_line_id")
+  invoiceLine   InvoiceLine @relation(fields: [invoiceLineId], references: [id], onDelete: Cascade)
+  decision      LineStatus
+  reviewerId    String      @map("reviewer_id")
+  remark        String?
+  decidedAt     DateTime    @default(now()) @map("decided_at")
+  @@map("manual_review_decision")
+}
+
+model ImportAttempt {
+  id               String       @id @default(cuid())
+  importId         String       @unique @map("import_id")
+  idempotencyKey   String       @unique @map("idempotency_key")
+  fileFingerprint  String       @map("file_fingerprint")
+  originalFileName String       @map("original_file_name")
+  storedFileName   String?      @map("stored_file_name")
+  receivedPath     String?      @map("received_path")
+  archivePath      String?      @map("archive_path")
+  status           ImportStatus @default(ACCEPTED)
+  correlationId    String       @map("correlation_id")
+  errorCategory    String?      @map("error_category")
+  message          String?
+  invoiceId        String?      @map("invoice_id")
+  invoice          Invoice?     @relation(fields: [invoiceId], references: [id])
+  submittedAt      DateTime     @default(now()) @map("submitted_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+  @@index([status])
+  @@map("import_attempt")
+}
+
+model AuditEvent {
+  id            String      @id @default(cuid())
+  action        AuditAction
+  actorEmail    String?     @map("actor_email")
+  userId        String?     @map("user_id")
+  user          LocalUser?  @relation(fields: [userId], references: [id])
+  invoiceId     String?     @map("invoice_id")
+  invoice       Invoice?    @relation(fields: [invoiceId], references: [id])
+  importId      String?     @map("import_id")
+  correlationId String?     @map("correlation_id")
+  safeMessage   String?     @map("safe_message")
+  metadata      Json?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  @@index([invoiceId, action])
+  @@index([correlationId])
+  @@map("audit_event")
+}
+
+model RouteConfiguration {
+  id                  String    @id @default(cuid())
+  parcelAccountNumber String?   @map("parcel_account_number")
+  companyCode         String?   @map("company_code")
+  domain              String
+  invoicePayer        String    @map("invoice_payer")
+  carrier             String
+  prebillNumberFormat String    @map("prebill_number_format")
+  version             String
+  active              Boolean   @default(true)
+  effectiveFrom       DateTime  @default(now()) @map("effective_from")
+  effectiveTo         DateTime? @map("effective_to")
+  createdBy           String?   @map("created_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  @@index([parcelAccountNumber, companyCode, active])
+  @@map("route_configuration")
+}
+
+model CostValidationConfiguration {
+  id                   String    @id @default(cuid())
+  vendorId             String?   @map("vendor_id")
+  routeDomain          String?   @map("route_domain")
+  costTolerancePercent Decimal   @db.Decimal(8, 3) @map("cost_tolerance_percent")
+  costFieldMapping     Json?     @map("cost_field_mapping")
+  currencyFieldMapping Json?     @map("currency_field_mapping")
+  version              String
+  active               Boolean   @default(true)
+  effectiveFrom        DateTime  @default(now()) @map("effective_from")
+  effectiveTo          DateTime? @map("effective_to")
+  createdBy            String?   @map("created_by")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  @@index([vendorId, routeDomain, active])
+  @@map("cost_validation_configuration")
+}
+model SapPosting {
+  id             String        @id @default(cuid())
+  invoiceId      String        @map("invoice_id")
+  invoice        Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  outputFileName String?       @map("output_file_name")
+  postingStatus  PostingStatus @default(PENDING) @map("posting_status")
+  errorDetails   String?       @map("error_details")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  @@unique([invoiceId])
+  @@map("sap_posting")
+}
+
+
+model OutputRecord {
+  id                  String       @id @default(cuid())
+  outputType          OutputType   @map("output_type")
+  invoiceId           String       @map("invoice_id")
+  invoice             Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceLineId       String       @map("invoice_line_id")
+  invoiceLine         InvoiceLine  @relation(fields: [invoiceLineId], references: [id], onDelete: Cascade)
+  idempotencyKey      String       @map("idempotency_key")
+  adapterStatus       OutputStatus @default(PENDING) @map("adapter_status")
+  generatedReference  String?      @map("generated_reference")
+  outputFileName      String?      @map("output_file_name")
+  shipmentId          String?      @map("shipment_id")
+  lineStatus          LineStatus   @map("line_status")
+  approvedPreTaxCost  Decimal?     @db.Decimal(14, 2) @map("approved_pre_tax_cost")
+  currency            String?
+  safeErrorCategory   String?      @map("safe_error_category")
+  safeErrorMessage    String?      @map("safe_error_message")
+  retryCount          Int          @default(0) @map("retry_count")
+  lastAttemptAt       DateTime?    @map("last_attempt_at")
+  generatedAt         DateTime?    @map("generated_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  @@unique([outputType, invoiceLineId])
+  @@unique([idempotencyKey])
+  @@index([invoiceId, outputType])
+  @@map("output_record")
+}
+model GlobalValidationConfiguration {
+  id               String   @id @default(cuid())
+  weightTolerance  Decimal  @db.Decimal(8, 3) @map("weight_tolerance_percent")
+  effectiveFrom    DateTime @default(now()) @map("effective_from")
+  createdAt        DateTime @default(now()) @map("created_at")
+  @@map("global_validation_configuration")
+}
+
+model VendorValidationConfiguration {
+  id               String   @id @default(cuid())
+  vendorId         String   @map("vendor_id")
+  vendor           Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  weightTolerance  Decimal? @db.Decimal(8, 3) @map("weight_tolerance_percent")
+  effectiveFrom    DateTime @default(now()) @map("effective_from")
+  active           Boolean  @default(true)
+  @@map("vendor_validation_configuration")
+}
+
+model SapPostingConfiguration {
+  id            String             @id @default(cuid())
+  triggerMode   PostingTriggerMode @default(AUTOMATIC) @map("trigger_mode")
+  effectiveFrom DateTime           @default(now()) @map("effective_from")
+  active        Boolean            @default(true)
+  @@map("sap_posting_configuration")
+}

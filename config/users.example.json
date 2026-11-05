@@ -1,0 +1,10 @@
+{
+  "users": [
+    {
+      "email": "reviewer@example.invalid",
+      "displayName": "Example Reviewer",
+      "passwordHash": "pbkdf2_sha256$210000$example-salt$EJfNnktRnL692AI3XcVbyQUWzzHK6IlBMftURrbh/Fw=",
+      "active": false
+    }
+  ]
+}

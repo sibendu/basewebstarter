@@ -1,0 +1,13 @@
+purpose: Verify the application's OIDC callback over HTTP without tenant credentials.
+contract:
+  - https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow
+  - https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc
+modeled:
+  - Token form encoding, confidential client authentication, redirect URI and PKCE.
+  - Signed RS256 ID tokens and JWKS.
+  - Invalid signature, missing ID token, claim overrides and provider errors.
+limits:
+  - Synthetic authorization codes, not a real authorization server or consent flow.
+  - No live Entra tenant, secret, browser sign-in, MFA or conditional access tested.
+  - Tests load the same fixture directly over HTTP; an optional simulation URL runs it through Postman.
+run: postman simulation run postman/simulations/entra/entra.sim.yaml --port 4117 --no-history --output ndjson

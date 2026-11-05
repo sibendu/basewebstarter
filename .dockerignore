@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env*
+config/users.local.json
+*.tsbuildinfo
+coverage
+graphify-out
+postman
+tests
+prisma
+AGENTS.md
+CLAUDE.md
